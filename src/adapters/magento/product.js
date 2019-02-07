@@ -17,8 +17,8 @@ const HTTP_RETRIES = 3
  *     .then(console.log(console))
  */
 const serial = funcs =>
-funcs.reduce((promise, func) =>
-    promise.then(result => func().then(Array.prototype.concat.bind(result))), Promise.resolve([]))
+    funcs.reduce((promise, func) =>
+        promise.then(result => func().then(Array.prototype.concat.bind(result))), Promise.resolve([]))
 
 class ProductAdapter extends AbstractMagentoAdapter {
 
@@ -64,13 +64,13 @@ class ProductAdapter extends AbstractMagentoAdapter {
         context.skus = new Array(context.skus);
 
       query += 'searchCriteria[filter_groups][0][filters][0][field]=sku&' +
-        'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(context.skus.join(',')) + '&' +
-        'searchCriteria[filter_groups][0][filters][0][condition_type]=in';
+          'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(context.skus.join(',')) + '&' +
+          'searchCriteria[filter_groups][0][filters][0][condition_type]=in';
 
     } else if (context.updated_after && typeof context.updated_after == 'object') {
       query += 'searchCriteria[filter_groups][0][filters][0][field]=updated_at&' +
-        'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(moment(context.updated_after).utc().format()) + '&' +
-        'searchCriteria[filter_groups][0][filters][0][condition_type]=gt';
+          'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(moment(context.updated_after).utc().format()) + '&' +
+          'searchCriteria[filter_groups][0][filters][0][condition_type]=gt';
     }
     return query;
   }
@@ -90,30 +90,30 @@ class ProductAdapter extends AbstractMagentoAdapter {
               // download rendered list items
               const products = result.items
               let skus = products.map((p) => { return p.sku })
-    
+
               if (products.length === 1) { // single product - download child data
                 const childSkus = _.flattenDeep(products.map((p) => { return (p.configurable_children) ? p.configurable_children.map((cc) => { return cc.sku }) : null }))
                 skus = _.union(skus, childSkus)
               }
               const query = '&searchCriteria[filter_groups][0][filters][0][field]=sku&' +
-              'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(skus.join(',')) + '&' +
-              'searchCriteria[filter_groups][0][filters][0][condition_type]=in';
-    
+                  'searchCriteria[filter_groups][0][filters][0][value]=' + encodeURIComponent(skus.join(',')) + '&' +
+                  'searchCriteria[filter_groups][0][filters][0][condition_type]=in';
+
               this.api.products.renderList(query, this.config.magento.storeId, this.config.magento.currencyCode).then(renderedProducts => {
                 context.renderedProducts = renderedProducts
                 for (let product of result.items) {
                   const productAdditionalInfo = renderedProducts.items.find(p => p.id === product.id)
-    
+
                   if (productAdditionalInfo && productAdditionalInfo.price_info) {
                     delete productAdditionalInfo.price_info.formatted_prices
                     delete productAdditionalInfo.price_info.extension_attributes
                     // delete productAdditionalInfo.price_info.special_price
                     product = Object.assign(product, productAdditionalInfo.price_info)
-    
+
                     if (product.final_price < product.price) {
                       product.special_price = product.final_price
                     }
-    
+
                     if (this.config.product.renderCatalogRegularPrices) {
                       product.price = product.regular_price
                     }
@@ -127,8 +127,8 @@ class ProductAdapter extends AbstractMagentoAdapter {
           })
         } else {
           return this.getProductSourceData(context).catch(err => {
-              retryHandler(context, err, null)
-            })
+            retryHandler(context, err, null)
+          })
         }
       } else {
         if (reject) {
@@ -137,8 +137,8 @@ class ProductAdapter extends AbstractMagentoAdapter {
           throw err
         }
       }
-    }  
-    
+    }
+
     // run the import logick
     return retryHandler(context, null, null)
   }
@@ -149,7 +149,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
 
     if(this.config.product && JSON.parse(this.config.product.excludeDisabledProducts)) {
       searchCriteria += '&searchCriteria[filterGroups][0][filters][0][field]=status'+
-                        '&searchCriteria[filterGroups][0][filters][0][value]=1';
+          '&searchCriteria[filterGroups][0][filters][0][value]=1';
     }
 
     if(typeof context.stock_sync !== 'undefined')
@@ -157,7 +157,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
 
     if(typeof context.category_sync !== 'undefined')
       this.category_sync = context.category_sync;
-      
+
     if(typeof context.configurable_sync !== 'undefined')
       this.configurable_sync = context.configurable_sync;
 
@@ -176,7 +176,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
       logger.debug(`Using specific paging options from adapter context: ${context.page} / ${context.page_size}`);
 
       return this.api.products.list(util.format(searchCriteria, context.page, context.page_size) + (query ? '&' + query : '')).catch((err) => {
-        throw new Error(err); 
+        throw new Error(err);
       });
 
     } else if (this.use_paging) {
@@ -201,16 +201,31 @@ class ProductAdapter extends AbstractMagentoAdapter {
     return `[(${source_item.id} - ${source_item.sku}) ${source_item.name}]`;
   }
 
+  isNumeric(value) {
+    return /^\d+$/.test(value);
+  }
   /**
-   * 
-   * @param {Object} item 
+   *
+   * @param {Object} item
    */
   preProcessItem(item) {
     for (let customAttribute of item.custom_attributes) { // map custom attributes directly to document root scope
-      item[customAttribute.attribute_code] = customAttribute.value;
+      let valueArray = (customAttribute['value']+'').split(',');
+      let attrValue = valueArray.map(Number);
+      if (valueArray.length > 1){
+        for (let element of valueArray){
+          if (!this.isNumeric(element)) {
+            attrValue = customAttribute.value;
+            break;
+          }
+        }
+      } else {
+        attrValue = customAttribute.value;
+      }
+      item[customAttribute.attribute_code] = attrValue;
     }
     item.custom_attributes = null;
-    
+
     return new Promise((done, reject) => {
       // TODO: add denormalization of productcategories into product categories
       // DO NOT use "productcategories" type but rather do search categories with assigned products
@@ -239,7 +254,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
       if (this.media_sync) {
         logger.info(`Product sub-stage 2: Getting media gallery ${item.sku}`);
         subSyncPromises.push(() => {
-          return this.api.productMedia.list(item.sku).then((result) => { 
+          return this.api.productMedia.list(item.sku).then((result) => {
             let media_gallery = []
             for (let mediaItem of result){
               if (!mediaItem.disabled) {
@@ -275,49 +290,49 @@ class ProductAdapter extends AbstractMagentoAdapter {
       if (this.custom_sync && item.type_id == 'bundle') {
         logger.info(`Product sub-stage 4: Getting bundle custom options ${item.sku}`);
         subSyncPromises.push(() => {
-          return this.api.bundleOptions.list(item.sku).then((result) => { 
+          return this.api.bundleOptions.list(item.sku).then((result) => {
             if(result && result.length > 0) {
               item.bundle_options = result
               logger.info(`Found bundle options for ${item.sku}: ${result.length}`)
             }
             return item
           })
-       })
+        })
       }
 
       // PRODUCT LINKS - as it seems magento returns these links anyway in the "product_links"
       if (this.links_sync) {
         logger.info(`Product sub-stage 5: Geting product links ${item.sku}`);
         item.links = {}
-        
+
         subSyncPromises.push(() => {
           return new Promise ((opResolve, opReject) => {
             return this.api.productLinks.types().then((result) => {
-            if(result && result.length > 0) {
-              let subPromises = []
-              for (const linkType of result) {
-                logger.info(`Getting the product links ${item.sku}: ${linkType.name}`)
-                subPromises.push(this.api.productLinks.list(item.sku, linkType.name).then((links) => { 
-                  if(links && links.length > 0) {
-                    item.links[linkType.name] = links.map((r) => { return { sku: r.linked_product_sku, pos: r.position } })
-                    logger.info(`Found related products for ${item.sku}: ${item.links[linkType.name]}`)
-                  }
-                  return item
-                }))
+              if(result && result.length > 0) {
+                let subPromises = []
+                for (const linkType of result) {
+                  logger.info(`Getting the product links ${item.sku}: ${linkType.name}`)
+                  subPromises.push(this.api.productLinks.list(item.sku, linkType.name).then((links) => {
+                    if(links && links.length > 0) {
+                      item.links[linkType.name] = links.map((r) => { return { sku: r.linked_product_sku, pos: r.position } })
+                      logger.info(`Found related products for ${item.sku}: ${item.links[linkType.name]}`)
+                    }
+                    return item
+                  }))
+                }
+                Promise.all(subPromises).then((res) => {
+                  logger.info('Product links expanded!')
+                  opResolve(item)
+                }).catch((err) => {
+                  logger.error(err)
+                  opResolve(item)
+                })
+              } else {
+                opResolve (item)
               }
-              Promise.all(subPromises).then((res) => {
-                logger.info('Product links expanded!')
-                opResolve(item)
-              }).catch((err) => {
-                logger.error(err)
-                opResolve(item)
-              })
-            } else {
-              opResolve (item)
-            }
-            return item
-          })
-        })})
+              return item
+            })
+          })})
       }
 
       // CONFIGURABLE AND BUNDLE SYNC
@@ -363,7 +378,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
                     if(config.product.renderCatalogRegularPrices) {
                       confChild.price = confChild.regular_price
                     }
-                    
+
                   }
                 }
 
@@ -396,7 +411,7 @@ class ProductAdapter extends AbstractMagentoAdapter {
                 let subPromises = []
                 for (let option of item.configurable_options) {
                   let atrKey = util.format(CacheKeys.CACHE_KEY_ATTRIBUTE, option.attribute_id);
-    
+
                   subPromises.push(new Promise ((resolve, reject) => {
                     logger.info(`Configurable options for ${atrKey}`)
                     this.cache.get(atrKey, (err, serializedAtr) => {
@@ -406,11 +421,11 @@ class ProductAdapter extends AbstractMagentoAdapter {
                         logger.info(`Product options for ${atr.attribute_code} for ${item.sku} set`);
                         item[atr.attribute_code + '_options'] = option.values.map((el) => { return el.value_index } )
                       }
-                      resolve(item)  
+                      resolve(item)
                     })
                   }))
                 }
-    
+
                 Promise.all(subPromises).then((res) => {
                   logger.info('Configurable options expanded!')
                   opResolve(item)
@@ -432,58 +447,58 @@ class ProductAdapter extends AbstractMagentoAdapter {
       // CATEGORIES SYNC
       subSyncPromises.push(() => {
         return new Promise((resolve, reject) => {
-        logger.info(`Product sub-stage 6: Geting product categories for ${item.sku}`);
-        
-        const key = util.format(CacheKeys.CACHE_KEY_PRODUCT_CATEGORIES, item.sku); // store under SKU of the product the categories assigned
+          logger.info(`Product sub-stage 6: Geting product categories for ${item.sku}`);
 
-        if(this.category_sync) {
-          item.category = new Array();
+          const key = util.format(CacheKeys.CACHE_KEY_PRODUCT_CATEGORIES, item.sku); // store under SKU of the product the categories assigned
 
-          const catBinder = (categories) => {
+          if(this.category_sync) {
+            item.category = new Array();
 
-            let catPromises = new Array();
-            for (let catId of categories) {
-              catPromises.push(
-                new Promise((resolve, reject) => {
-                  let cat = this.cache.get(util.format(CacheKeys.CACHE_KEY_CATEGORY, catId), (err, serializedCat) => {
-                    let cat = JSON.parse(serializedCat); // category object
-                    if (cat != null) {
-                      resolve({
-                        category_id: cat.id,
-                        name: cat.name
-                      })
-                    } else {
-                      resolve({
-                        category_id: catId
+            const catBinder = (categories) => {
+
+              let catPromises = new Array();
+              for (let catId of categories) {
+                catPromises.push(
+                    new Promise((resolve, reject) => {
+                      let cat = this.cache.get(util.format(CacheKeys.CACHE_KEY_CATEGORY, catId), (err, serializedCat) => {
+                        let cat = JSON.parse(serializedCat); // category object
+                        if (cat != null) {
+                          resolve({
+                            category_id: cat.id,
+                            name: cat.name
+                          })
+                        } else {
+                          resolve({
+                            category_id: catId
+                          });
+                        }
                       });
-                    }
-                  });
-                })
-              );
-            }
+                    })
+                );
+              }
 
-            Promise.all(catPromises).then((values) => {
-              if(this.category_sync) // TODO: refactor the code above to not get cache categorylinks when no category_sync required
-                item.category = values; // here we get configurable options
+              Promise.all(catPromises).then((values) => {
+                if(this.category_sync) // TODO: refactor the code above to not get cache categorylinks when no category_sync required
+                  item.category = values; // here we get configurable options
                 resolve(item)
-            });
+              });
+            }
+            if (item.category_ids && Array.isArray(item.category_ids) && item.category_ids.length > 0) {
+              const catIdsArray = item.category_ids.map(item => { return parseInt(item)})
+              logger.info(`Using category_ids binding for ${item.sku}: ${catIdsArray}`)
+              catBinder(catIdsArray)
+            } else {
+              this.cache.smembers(key, (err, categories) => {
+                if (categories == null) {
+                  resolve(item);
+                }
+                else {
+                  catBinder(categories)
+                }
+              })
+            }
           }
-          if (item.category_ids && Array.isArray(item.category_ids) && item.category_ids.length > 0) {
-            const catIdsArray = item.category_ids.map(item => { return parseInt(item)})
-            logger.info(`Using category_ids binding for ${item.sku}: ${catIdsArray}`)
-            catBinder(catIdsArray)
-          } else {
-            this.cache.smembers(key, (err, categories) => {
-              if (categories == null) {
-                resolve(item);
-              }
-              else {
-                catBinder(categories)
-              }
-            })
-          }
-        }
-      })})
+        })})
 
       serial(subSyncPromises).then((res) => {
         logger.info(`Product sub-stages done for ${item.sku}`)
@@ -515,12 +530,12 @@ class ProductAdapter extends AbstractMagentoAdapter {
       request(this.config.vuestorefront.invalidateCacheUrl + 'P' + item.id, {}, (err, res, body) => {
         if (err) { return console.error(err); }
         console.log(body);
-      });      
+      });
     }
 
     let resultItem = Object.assign(item, {
-    // "price": prices, // ES stores prices differently
-    // TODO: HOW TO GET product stock from Magento API call for product?
+      // "price": prices, // ES stores prices differently
+      // TODO: HOW TO GET product stock from Magento API call for product?
     });
     return resultItem;
   }
